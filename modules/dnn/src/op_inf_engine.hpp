@@ -23,10 +23,11 @@
 #define INF_ENGINE_RELEASE_2019R1 2019010000
 #define INF_ENGINE_RELEASE_2019R2 2019020000
 #define INF_ENGINE_RELEASE_2019R3 2019030000
+#define INF_ENGINE_RELEASE_2020_1 2020010000
 
 #ifndef INF_ENGINE_RELEASE
-#warning("IE version have not been provided via command-line. Using 2019R3 by default")
-#define INF_ENGINE_RELEASE INF_ENGINE_RELEASE_2019R3
+#warning("IE version have not been provided via command-line. Using 2019.1 by default")
+#define INF_ENGINE_RELEASE INF_ENGINE_RELEASE_2020_1
 #endif
 
 #define INF_ENGINE_VER_MAJOR_GT(ver) (((INF_ENGINE_RELEASE) / 10000) > ((ver) / 10000))
@@ -49,7 +50,7 @@
 #pragma warning(disable: 4996)  // was declared deprecated
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) && INF_ENGINE_VER_MAJOR_LT(INF_ENGINE_RELEASE_2020_1)
 #pragma GCC visibility push(default)
 #endif
 
@@ -57,7 +58,7 @@
 
 #include <ie_builders.hpp>
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) && INF_ENGINE_VER_MAJOR_LT(INF_ENGINE_RELEASE_2020_1)
 #pragma GCC visibility pop
 #endif
 
@@ -70,6 +71,8 @@
 namespace cv { namespace dnn {
 
 #ifdef HAVE_INF_ENGINE
+
+Backend& getInferenceEngineBackendTypeParam();
 
 class InfEngineBackendNet
 {
@@ -88,7 +91,7 @@ public:
 
     bool isInitialized();
 
-    void init(int targetId);
+    void init(Target targetId);
 
     void forward(const std::vector<Ptr<BackendWrapper> >& outBlobsWrappers,
                  bool isAsync);
@@ -130,7 +133,7 @@ private:
     std::map<std::string, int> layers;
     std::vector<std::string> requestedOutputs;
 
-    std::set<int> unconnectedLayersIds;
+    std::set<std::pair<int, int> > unconnectedPorts;
 };
 
 class InfEngineBackendNode : public BackendNode
@@ -210,11 +213,44 @@ private:
     InferenceEngine::CNNNetwork t_net;
 };
 
+
+class InfEngineExtension : public InferenceEngine::IExtension
+{
+public:
+    virtual void SetLogCallback(InferenceEngine::IErrorListener&) noexcept {}
+    virtual void Unload() noexcept {}
+    virtual void Release() noexcept {}
+    virtual void GetVersion(const InferenceEngine::Version*&) const noexcept {}
+
+    virtual InferenceEngine::StatusCode getPrimitiveTypes(char**&, unsigned int&,
+                                                          InferenceEngine::ResponseDesc*) noexcept
+    {
+        return InferenceEngine::StatusCode::OK;
+    }
+
+    InferenceEngine::StatusCode getFactoryFor(InferenceEngine::ILayerImplFactory*& factory,
+                                              const InferenceEngine::CNNLayer* cnnLayer,
+                                              InferenceEngine::ResponseDesc* resp) noexcept;
+};
+
+
 CV__DNN_INLINE_NS_BEGIN
 
 bool isMyriadX();
 
 CV__DNN_INLINE_NS_END
+
+InferenceEngine::Core& getCore();
+
+template<typename T = size_t>
+static inline std::vector<T> getShape(const Mat& mat)
+{
+    std::vector<T> result(mat.dims);
+    for (int i = 0; i < mat.dims; i++)
+        result[i] = (T)mat.size[i];
+    return result;
+}
+
 
 #endif  // HAVE_INF_ENGINE
 
